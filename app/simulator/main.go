@@ -8,7 +8,7 @@ import (
 )
 
 const FPS = 60
-const seconds = 2000
+const seconds = 300
 const drawerCount = 20
 
 func main() {
@@ -24,10 +24,13 @@ func main() {
 
 	obj1 := &rockets.MassObject{Mass: 30, R: 20, ID: "obj1", IsKinematic: true}
 	obj1.Position = rockets.Vector3D{X: 500, Y: 500, Z: 0}
+	obj1.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 
 	obj2 := &rockets.MassObject{Mass: 10, R: 10, ID: "obj2"}
 	obj2.Position = rockets.Vector3D{X: 700, Y: 500, Z: 0}
 	obj2.Velocity = rockets.Vector3D{X: 0, Y: 1.2, Z: 0}
+	obj2.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
+	obj2.AngularVel = rockets.Vector3D{X: 0, Y: 0, Z: 0.2}
 
 	objects = append(objects, obj1, obj2)
 
@@ -129,6 +132,14 @@ func drawObj(ctx *gg.Context, obj *rockets.MassObject, index int) {
 
 	ctx.DrawPoint(obj.Position.X, obj.Position.Y, obj.R)
 	ctx.Fill()
+
+	headingNorm := obj.Angle.Normalize()
+	headingIndicatorStart := obj.Position.Add(headingNorm.Mul(obj.R))
+	headingIndicatorEnd := obj.Position.Add(headingNorm.Mul(obj.R + 10))
+
+	ctx.SetLineWidth(5)
+	ctx.DrawLine(headingIndicatorStart.X, headingIndicatorStart.Y, headingIndicatorEnd.X, headingIndicatorEnd.Y)
+	ctx.Stroke()
 
 	ctx.SetRGB(1, 1, 1)
 	id := fmt.Sprintf("%d", index)
