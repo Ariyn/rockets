@@ -4,12 +4,20 @@ import (
 	"fmt"
 	"github.com/ariyn/rockets"
 	"github.com/fogleman/gg"
+	"math"
 	"sync"
 )
 
 const FPS = 60
-const seconds = 300
+const seconds = 9999
 const drawerCount = 20
+
+const radiusOfEarth = 6.375427e+06 // in meters
+
+var massOfEarth = 5.97219e+24
+
+var cameraSize = rockets.Vector3D{X: 1000, Y: 1000, Z: 0}
+var viewportZoomRatio = 1e-5
 
 func main() {
 	c := make(chan drawStruct, drawerCount*5)
@@ -20,19 +28,29 @@ func main() {
 		go drawer(c, &wg)
 	}
 
+	escapeVelocity := math.Sqrt(2 * rockets.BigG * massOfEarth / (radiusOfEarth + 300e3))
+	fmt.Println("escape velocity:", escapeVelocity)
+
 	objects := make([]*rockets.MassObject, 0)
 
-	obj1 := &rockets.MassObject{Mass: 30, R: 20, ID: "obj1", IsKinematic: true}
-	obj1.Position = rockets.Vector3D{X: 500, Y: 500, Z: 0}
+	obj1 := &rockets.MassObject{Mass: massOfEarth, R: radiusOfEarth, ID: "obj1", IsKinematic: true}
+	obj1.Position = rockets.Vector3D{X: 0, Y: 0, Z: 0}
 	obj1.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 
-	obj2 := &rockets.MassObject{Mass: 10, R: 10, ID: "obj2"}
-	obj2.Position = rockets.Vector3D{X: 700, Y: 500, Z: 0}
-	obj2.Velocity = rockets.Vector3D{X: 0, Y: 1.2, Z: 0}
+	obj2 := &rockets.MassObject{Mass: 100, R: 10, ID: "obj2"}
+	obj2.Position = rockets.Vector3D{X: radiusOfEarth + 800*1e3, Y: 0, Z: 0}
+	obj2.Velocity = rockets.Vector3D{X: 0, Y: 8e3, Z: 0}
 	obj2.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 	obj2.AngularVel = rockets.Vector3D{X: 0, Y: 0, Z: 0.2}
 
 	objects = append(objects, obj1, obj2)
+
+	copiedObjects := make([]rockets.MassObject, len(objects))
+	for i, obj := range objects {
+		copiedObjects[i] = *obj
+	}
+
+	c <- drawStruct{objects: copiedObjects, cameraPosition: obj2.Position, index: 0}
 
 	for i := 0; i < seconds*FPS; i++ {
 		for _, obj := range objects {
@@ -49,7 +67,7 @@ func main() {
 			for i, obj := range objects {
 				copiedObjects[i] = *obj
 			}
-			c <- drawStruct{objects: copiedObjects, index: i / FPS}
+			c <- drawStruct{objects: copiedObjects, cameraPosition: obj2.Position, index: i/FPS + 1}
 		}
 	}
 
@@ -73,7 +91,7 @@ func calculateForce(obj *rockets.MassObject, objects []*rockets.MassObject) {
 func setColor(ctx *gg.Context, index int) {
 	switch index {
 	case 1:
-		ctx.SetRGB(1, 0, 0)
+		ctx.SetRGB(0, 1, 0)
 	case 2:
 		ctx.SetRGB(0, 0, 1)
 	case 3:
@@ -84,28 +102,29 @@ func setColor(ctx *gg.Context, index int) {
 }
 
 type drawStruct struct {
-	objects []rockets.MassObject
-	index   int
+	objects        []rockets.MassObject
+	cameraPosition rockets.Vector3D
+	index          int
 }
 
 func drawer(c <-chan drawStruct, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for ds := range c {
-		ctx := gg.NewContext(1000, 1000)
+		ctx := gg.NewContext(int(cameraSize.X), int(cameraSize.Y))
 		ctx.SetRGB(0, 0, 0)
-		ctx.DrawRectangle(0, 0, 1000, 1000)
+		ctx.DrawRectangle(0, 0, cameraSize.X, cameraSize.Y)
 		ctx.Fill()
 
 		for i, obj := range ds.objects {
-			drawObj(ctx, &obj, i+1)
+			drawObj(ctx, ds.cameraPosition, &obj, i+1)
 		}
 
 		ctx.SetRGB(1, 1, 1)
 		ctx.DrawString(fmt.Sprintf("index: %d", ds.index), 30, 870)
 
 		for i, obj := range ds.objects {
-			ctx.DrawString(fmt.Sprintf("obj%d: %f, %f", i+1, obj.Force.X, obj.Force.Y), 30, float64(900+i*20))
+			ctx.DrawString(fmt.Sprintf("obj%d: F(%f, %f) / P(%f, %f)", i+1, obj.Force.X, obj.Force.Y, obj.Position.X, obj.Position.Y), 30, float64(900+i*20))
 		}
 
 		err := ctx.SavePNG(fmt.Sprintf("images/%05d.png", ds.index))
@@ -115,30 +134,51 @@ func drawer(c <-chan drawStruct, wg *sync.WaitGroup) {
 	}
 }
 
-func drawObj(ctx *gg.Context, obj *rockets.MassObject, index int) {
+func cameraCoordinate(cameraPosition, pos rockets.Vector3D) rockets.Vector3D {
+	return pos.Sub(cameraPosition).Mul(viewportZoomRatio).Add(cameraSize.Mul(0.5))
+}
+
+func drawObj(ctx *gg.Context, cameraPosition rockets.Vector3D, obj *rockets.MassObject, index int) {
 	setColor(ctx, index)
+
 	if len(obj.PositionHistory) != 0 {
 		ctx.SetLineWidth(1)
 		for i, p := range obj.PositionHistory[:len(obj.PositionHistory)-1] {
-			if i == 0 || i%FPS != 0 {
+			if i == 0 || i%int(FPS/viewportZoomRatio) != 0 {
 				continue
 			}
 
-			prev := obj.PositionHistory[i-FPS]
-			ctx.DrawLine(prev.X, prev.Y, p.X, p.Y)
+			prev := cameraCoordinate(cameraPosition, obj.PositionHistory[i-FPS])
+			curr := cameraCoordinate(cameraPosition, p)
+
+			if cameraSize.Length() <= prev.Distance(cameraSize.Mul(0.5)) || cameraSize.Length() <= curr.Distance(cameraSize.Mul(0.5)) {
+				continue
+			}
+
+			ctx.DrawLine(prev.X, prev.Y, curr.X, curr.Y)
 		}
 		ctx.Stroke()
 	}
 
-	ctx.DrawPoint(obj.Position.X, obj.Position.Y, obj.R)
+	newPosition := cameraCoordinate(cameraPosition, obj.Position)
+	if cameraSize.Length() <= newPosition.Distance(cameraSize.Mul(0.5)) {
+		return
+	}
+
+	ctx.DrawPoint(newPosition.X, newPosition.Y, math.Max(obj.R*viewportZoomRatio, 2))
 	ctx.Fill()
 
 	headingNorm := obj.Angle.Normalize()
-	headingIndicatorStart := obj.Position.Add(headingNorm.Mul(obj.R))
-	headingIndicatorEnd := obj.Position.Add(headingNorm.Mul(obj.R + 10))
+	headingIndicatorStart := cameraCoordinate(cameraPosition, obj.Position.Add(headingNorm.Mul(obj.R)))
+	headingIndicatorEnd := cameraCoordinate(cameraPosition, obj.Position.Add(headingNorm.Mul(obj.R+10)))
 
 	ctx.SetLineWidth(5)
-	ctx.DrawLine(headingIndicatorStart.X, headingIndicatorStart.Y, headingIndicatorEnd.X, headingIndicatorEnd.Y)
+	ctx.DrawLine(
+		headingIndicatorStart.X,
+		headingIndicatorStart.Y,
+		headingIndicatorEnd.X,
+		headingIndicatorEnd.Y,
+	)
 	ctx.Stroke()
 
 	ctx.SetRGB(1, 1, 1)
@@ -146,5 +186,6 @@ func drawObj(ctx *gg.Context, obj *rockets.MassObject, index int) {
 	w, h := ctx.MeasureString(id)
 
 	ctx.SetRGB(0, 0, 0)
-	ctx.DrawString(id, obj.Position.X-w/2, obj.Position.Y+h/2)
+
+	ctx.DrawString(id, newPosition.X-w/2, newPosition.Y+h/2)
 }
