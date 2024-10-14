@@ -4,7 +4,7 @@ import (
 	"math"
 )
 
-const gravity = 9.8
+var BigG = 6.67430 * 1e-11 // 6.6743×10−11 N⋅m2/kg2
 
 type MassObject struct {
 	ID string
@@ -28,6 +28,11 @@ type MassObject struct {
 	AngularAcc Vector3D
 	Torque     Vector3D
 	NextTorque Vector3D
+}
+
+func (m *MassObject) GetGravity(other *MassObject) float64 {
+	altitude := other.Position.Distance(m.Position)
+	return BigG * m.Mass * other.Mass / (altitude * altitude)
 }
 
 func (m *MassObject) Step(dt float64) {
@@ -82,6 +87,6 @@ func (m *MassObject) CalculateForce(other *MassObject) {
 	}
 
 	p := other.Position.Sub(m.Position)
-	r := p.Length()
-	m.NextForce = m.NextForce.Add(p.Normalize().Mul(gravity * m.Mass * other.Mass / (r * r)))
+	g := m.GetGravity(other)
+	m.NextForce = m.NextForce.Add(p.Normalize().Mul(g))
 }
