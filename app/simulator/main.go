@@ -9,7 +9,7 @@ import (
 )
 
 const FPS = 60
-const seconds = 9999
+const seconds = 1000
 const drawerCount = 20
 
 const radiusOfEarth = 6.375427e+06 // in meters
@@ -28,18 +28,15 @@ func main() {
 		go drawer(c, &wg)
 	}
 
-	escapeVelocity := math.Sqrt(2 * rockets.BigG * massOfEarth / (radiusOfEarth + 300e3))
-	fmt.Println("escape velocity:", escapeVelocity)
-
 	objects := make([]*rockets.MassObject, 0)
 
-	obj1 := &rockets.MassObject{Mass: massOfEarth, R: radiusOfEarth, ID: "obj1", IsKinematic: true}
+	obj1 := &rockets.MassObject{Mass: massOfEarth, R: radiusOfEarth, ID: "Earth", IsKinematic: true}
 	obj1.Position = rockets.Vector3D{X: 0, Y: 0, Z: 0}
 	obj1.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 
-	obj2 := &rockets.MassObject{Mass: 100, R: 10, ID: "obj2"}
+	obj2 := &rockets.MassObject{Mass: 100, R: 10, ID: "Satellite"}
 	obj2.Position = rockets.Vector3D{X: radiusOfEarth + 800*1e3, Y: 0, Z: 0}
-	obj2.Velocity = rockets.Vector3D{X: 0, Y: 8e3, Z: 0}
+	obj2.Velocity = rockets.Vector3D{X: 0, Y: 7.67e3, Z: 0}
 	obj2.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 	obj2.AngularVel = rockets.Vector3D{X: 0, Y: 0, Z: 0.2}
 
@@ -123,8 +120,8 @@ func drawer(c <-chan drawStruct, wg *sync.WaitGroup) {
 		ctx.SetRGB(1, 1, 1)
 		ctx.DrawString(fmt.Sprintf("index: %d", ds.index), 30, 870)
 
-		for i, obj := range ds.objects {
-			ctx.DrawString(fmt.Sprintf("obj%d: F(%f, %f) / P(%f, %f)", i+1, obj.Force.X, obj.Force.Y, obj.Position.X, obj.Position.Y), 30, float64(900+i*20))
+		for i, obj := range ds.objects[1:] {
+			ctx.DrawString(fmt.Sprintf("obj%d: F(%f, %f) / Alt: %f", i+1, obj.Force.X, obj.Force.Y, (obj.Position.Length()-radiusOfEarth)/1e3), 30, float64(900+i*20))
 		}
 
 		err := ctx.SavePNG(fmt.Sprintf("images/%05d.png", ds.index))
@@ -138,26 +135,37 @@ func cameraCoordinate(cameraPosition, pos rockets.Vector3D) rockets.Vector3D {
 	return pos.Sub(cameraPosition).Mul(viewportZoomRatio).Add(cameraSize.Mul(0.5))
 }
 
+func drawPositionLine(ctx *gg.Context, cameraPosition rockets.Vector3D, positions []rockets.Vector3D, index int) {
+	ctx.SetLineWidth(1)
+	setColor(ctx, index)
+
+	prevIndex := 0
+	for i, p := range positions {
+		if i == 0 {
+			continue
+		}
+
+		prev := cameraCoordinate(cameraPosition, positions[prevIndex])
+		curr := cameraCoordinate(cameraPosition, p)
+
+		if cameraSize.Length() <= prev.Distance(cameraSize.Mul(0.5)) || cameraSize.Length() <= curr.Distance(cameraSize.Mul(0.5)) {
+			continue
+		}
+		if prev.Distance(curr) < 3 {
+			continue
+		}
+
+		ctx.DrawLine(prev.X, prev.Y, curr.X, curr.Y)
+		prevIndex = i
+	}
+	ctx.Stroke()
+}
+
 func drawObj(ctx *gg.Context, cameraPosition rockets.Vector3D, obj *rockets.MassObject, index int) {
 	setColor(ctx, index)
 
 	if len(obj.PositionHistory) != 0 {
-		ctx.SetLineWidth(1)
-		for i, p := range obj.PositionHistory[:len(obj.PositionHistory)-1] {
-			if i == 0 || i%int(FPS/viewportZoomRatio) != 0 {
-				continue
-			}
-
-			prev := cameraCoordinate(cameraPosition, obj.PositionHistory[i-FPS])
-			curr := cameraCoordinate(cameraPosition, p)
-
-			if cameraSize.Length() <= prev.Distance(cameraSize.Mul(0.5)) || cameraSize.Length() <= curr.Distance(cameraSize.Mul(0.5)) {
-				continue
-			}
-
-			ctx.DrawLine(prev.X, prev.Y, curr.X, curr.Y)
-		}
-		ctx.Stroke()
+		drawPositionLine(ctx, cameraPosition, obj.PositionHistory, index)
 	}
 
 	newPosition := cameraCoordinate(cameraPosition, obj.Position)
