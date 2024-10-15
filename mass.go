@@ -28,6 +28,8 @@ type MassObject struct {
 	AngularAcc Vector3D
 	Torque     Vector3D
 	NextTorque Vector3D
+
+	Thrust float64 // N
 }
 
 func (m *MassObject) GetGravity(other *MassObject) float64 {
@@ -88,5 +90,5 @@ func (m *MassObject) CalculateForce(other *MassObject) {
 
 	p := other.Position.Sub(m.Position)
 	g := m.GetGravity(other)
-	m.NextForce = m.NextForce.Add(p.Normalize().Mul(g))
+	m.NextForce = m.NextForce.Add(p.Normalize().Mul(g)).Add(m.Angle.Normalize().Mul(m.Thrust))
 }

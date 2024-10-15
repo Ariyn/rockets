@@ -34,11 +34,11 @@ func main() {
 	obj1.Position = rockets.Vector3D{X: 0, Y: 0, Z: 0}
 	obj1.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
 
-	obj2 := &rockets.MassObject{Mass: 100, R: 10, ID: "Satellite"}
+	obj2 := &rockets.MassObject{Mass: 1, R: 10, ID: "Satellite"}
 	obj2.Position = rockets.Vector3D{X: radiusOfEarth + 800*1e3, Y: 0, Z: 0}
 	obj2.Velocity = rockets.Vector3D{X: 0, Y: 7.67e3, Z: 0}
 	obj2.Angle = rockets.Vector3D{X: 0, Y: 1, Z: 0}
-	obj2.AngularVel = rockets.Vector3D{X: 0, Y: 0, Z: 0.2}
+	//obj2.Thrust = 1
 
 	objects = append(objects, obj1, obj2)
 
@@ -124,7 +124,7 @@ func drawer(c <-chan drawStruct, wg *sync.WaitGroup) {
 			ctx.DrawString(fmt.Sprintf("obj%d: F(%f, %f) / Alt: %f", i+1, obj.Force.X, obj.Force.Y, (obj.Position.Length()-radiusOfEarth)/1e3), 30, float64(900+i*20))
 		}
 
-		err := ctx.SavePNG(fmt.Sprintf("images/%05d.png", ds.index))
+		err := ctx.SavePNG(fmt.Sprintf("images2/%05d.png", ds.index))
 		if err != nil {
 			panic(err)
 		}
